@@ -286,7 +286,7 @@ def suggest():
 def random_suggestions():
     try:
         query = 'music'
-        ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'default_search': 'ytsearch15:'}
+        ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'default_search': 'ytsearch50:'}
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=False)
             entries = info.get('entries',[]) or []
