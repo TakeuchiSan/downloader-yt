@@ -307,7 +307,7 @@ def search():
     if not q: return jsonify({'error': "Parameter 'q' diperlukan"}), 400
     try:
         app.logger.info(f"Mencari video: {q}")
-        ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'default_search': 'ytsearch15:'}
+        ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'default_search': 'ytsearch100:'}
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(q, download=False)
             entries = info.get('entries',[]) or []
