@@ -130,9 +130,6 @@ HTML_TEMPLATE = '''
       color: inherit;
       text-decoration: none;
     }
-    .hidden {
-      display: none;
-    }
   </style>
 </head>
 <body>
@@ -141,11 +138,8 @@ HTML_TEMPLATE = '''
     <input type="text" id="query" placeholder="Masukkan judul atau link YouTube..." oninput="suggest()" />
     <button onclick="search()">Cari</button>
 
-    <div id="suggestions" class="suggestions hidden"></div>
-    
-    <div class="search-results">
-      <div class="video-grid" id="search-results-grid"></div>
-    </div>
+    <div id="suggestions" class="suggestions" style="display:none;"></div>
+    <div class="search-results" id="results"></div>
 
     <div class="video-suggestions">
       <div class="video-grid" id="random-video-container"></div>
@@ -183,67 +177,38 @@ HTML_TEMPLATE = '''
   let suggestTimeout;
   function suggest() {
     clearTimeout(suggestTimeout);
-    const q = document.getElementById('query').value.trim();
+    const q = document.getElementById('query').value;
     const sugDiv = document.getElementById('suggestions');
-    if (q.length < 3) { 
-      sugDiv.classList.add('hidden');
-      return; 
-    }
-    
+    if (q.length < 3) { sugDiv.style.display = 'none'; return; }
     suggestTimeout = setTimeout(async () => {
       try {
         const res = await fetch(`/api/suggest?q=${encodeURIComponent(q)}`);
         const data = await res.json();
-        if (res.ok && data.length > 0) {
-          sugDiv.innerHTML = data.map(item => 
-            `<div onclick="pickSuggest('${item.replace(/'/g, "\\'")}')">${item}</div>`
-          ).join('');
-          sugDiv.classList.remove('hidden');
-        } else {
-          sugDiv.classList.add('hidden');
+        if (res.ok) {
+          sugDiv.innerHTML = data.map(item => `<div onclick="pickSuggest('${item.replace(/'/g, "\\'")}')">${item}</div>`).join('');
+          sugDiv.style.display = 'block';
         }
-      } catch (e) { 
-        console.error(e);
-        sugDiv.classList.add('hidden');
-      }
+      } catch (e) { console.error(e); }
     }, 300);
   }
 
   function pickSuggest(val) {
     document.getElementById('query').value = val;
-    document.getElementById('suggestions').classList.add('hidden');
+    document.getElementById('suggestions').style.display = 'none';
     search();
   }
 
   async function search() {
-    const q = document.getElementById('query').value.trim();
-    if (!q) return;
-    
-    const sugDiv = document.getElementById('suggestions');
-    sugDiv.classList.add('hidden');
-    
-    const resDiv = document.getElementById('search-results-grid');
-    const randomDiv = document.getElementById('random-video-container');
-    
+    document.getElementById('suggestions').style.display = 'none';
+    const q = document.getElementById('query').value;
+    const resDiv = document.getElementById('results');
     resDiv.innerHTML = '<p class="search-status">Mencari...</p>';
-    randomDiv.classList.add('hidden');
-    
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
       const data = await res.json();
-      
-      if (!res.ok) {
-        resDiv.innerHTML = `<p>Error: ${data.error}</p>`;
-        return;
-      }
-      
-      resDiv.innerHTML = '';
-      
-      if (data.length === 0) {
-        resDiv.innerHTML = '<p>Tidak ada hasil ditemukan</p>';
-        return;
-      }
-      
+      if (!res.ok) return resDiv.innerHTML = `<p>Error: ${data.error}</p>`;
+      resDiv.innerHTML = '<div class="video-grid" id="search-results-grid"></div>';
+      const grid = document.getElementById('search-results-grid');
       data.forEach(video => {
         const card = document.createElement('div');
         card.className = 'suggestion-card';
@@ -257,12 +222,9 @@ HTML_TEMPLATE = '''
               <button onclick="download('${video.url}','mp4')">MP4</button>
             </div>
           </div>`;
-        resDiv.appendChild(card);
+        grid.appendChild(card);
       });
-      
-    } catch (e) {
-      resDiv.innerHTML = `<p>Error: ${e.message}</p>`;
-    }
+    } catch (e) { resDiv.innerHTML = `<p>Error: ${e.message}</p>`; }
   }
 
   function download(url, fmt) {
@@ -274,18 +236,10 @@ HTML_TEMPLATE = '''
   async function loadRandomSuggestions() {
     const container = document.getElementById('random-video-container');
     try {
-      container.innerHTML = '<p class="search-status">Memuat saran...</p>';
       const res = await fetch('/api/random_suggestions');
       const data = await res.json();
-      
-      if (!res.ok) {
-        container.innerHTML = '<p>Gagal memuat saran</p>';
-        return;
-      }
-      
+      if (!res.ok) return;
       container.innerHTML = '';
-      container.classList.remove('hidden');
-      
       data.forEach(video => {
         const card = document.createElement('div');
         card.className = 'suggestion-card';
@@ -303,7 +257,6 @@ HTML_TEMPLATE = '''
       });
     } catch (e) {
       console.error('Error loading suggestions:', e);
-      container.innerHTML = '<p>Gagal memuat saran</p>';
     }
   }
 
@@ -314,143 +267,84 @@ HTML_TEMPLATE = '''
 '''
 
 @app.route('/')
-def index(): 
-    return render_template_string(HTML_TEMPLATE)
+def index(): return render_template_string(HTML_TEMPLATE)
 
 @app.route('/api/suggest')
 def suggest():
     q = request.args.get('q')
-    if not q: 
-        return jsonify({'error': "Parameter 'q' diperlukan"}), 400
-    
+    if not q: return jsonify({'error': "Parameter 'q' diperlukan"}), 400
     try:
-        ydl_opts = {
-            'quiet': True,
-            'extract_flat': True,
-            'default_search': 'ytsearch5:',
-            'skip_download': True
-        }
+        ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'default_search': 'ytsearch5:'}
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(q, download=False)
             titles = [e.get('title','') for e in info.get('entries',[]) if e]
-        return jsonify(titles[:5])  # Only return top 5 suggestions
-        
+        return jsonify(titles)
     except Exception as e:
-        app.logger.error(f"Suggest error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/random_suggestions')
 def random_suggestions():
     try:
-        queries = ['music', 'trending', 'viral', 'popular songs', 'indonesia pop']
-        query = random.choice(queries)
-        
-        ydl_opts = {
-            'quiet': True,
-            'extract_flat': True,
-            'default_search': 'ytsearch12:',
-            'skip_download': True
-        }
-        
+        query = 'music'
+        ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'default_search': 'ytsearch15:'}
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=False)
             entries = info.get('entries',[]) or []
-            
             results = [
-                {
-                    'id': v.get('id'), 
-                    'title': v.get('title','Tanpa judul'),
-                    'url': v.get('url') or f"https://youtube.com/watch?v={v.get('id')}",
-                    'thumbnail': (v.get('thumbnails', [{}])[-1].get('url') or 
-                                f"https://i.ytimg.com/vi/{v.get('id')}/hqdefault.jpg"),
-                    'author': v.get('uploader','Unknown')
-                } for v in entries if v
+                {'id': v.get('id'), 'title': v.get('title','Tanpa judul'),
+                 'url': v.get('url'), 'thumbnail': v.get('thumbnails',[{}])[-1].get('url'),
+                 'author': v.get('uploader','Unknown')} for v in entries if v
             ]
-            
         random.shuffle(results)
         return jsonify(results[:12])
-        
     except Exception as e:
-        app.logger.error(f"Random suggestions error: {e}")
+        app.logger.error(f"Error random: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/search')
 def search():
     q = request.args.get('q')
-    if not q: 
-        return jsonify({'error': "Parameter 'q' diperlukan"}), 400
-    
+    if not q: return jsonify({'error': "Parameter 'q' diperlukan"}), 400
     try:
-        app.logger.info(f"Searching for: {q}")
-        
-        ydl_opts = {
-            'quiet': True,
-            'extract_flat': True,
-            'default_search': 'ytsearch20:',  # Show 20 results
-            'skip_download': True
-        }
-        
+        app.logger.info(f"Mencari video: {q}")
+        ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'default_search': 'ytsearch15:'}
         with YoutubeDL(ydl_opts) as ydl:
-            # Handle direct URLs
-            if 'youtube.com/watch' in q or 'youtu.be/' in q:
-                info = ydl.extract_info(q, download=False)
-                entries = [info] if info else []
-            else:
-                info = ydl.extract_info(q, download=False)
-                entries = info.get('entries',[]) or []
-                
+            info = ydl.extract_info(q, download=False)
+            entries = info.get('entries',[]) or []
             results = [
-                {
-                    'id': v.get('id'), 
-                    'title': v.get('title','Tanpa judul'),
-                    'url': v.get('url') or f"https://youtube.com/watch?v={v.get('id')}",
-                    'thumbnail': (v.get('thumbnails', [{}])[-1].get('url') or 
-                                f"https://i.ytimg.com/vi/{v.get('id')}/hqdefault.jpg"),
-                    'author': v.get('uploader','Unknown')
-                } for v in entries if v
+                {'id': v.get('id'), 'title': v.get('title','Tanpa judul'),
+                 'url': v.get('url'), 'thumbnail': v.get('thumbnails',[{}])[-1].get('url'),
+                 'author': v.get('uploader','Unknown')} for v in entries if v
             ]
-            
         return jsonify(results)
-        
     except Exception as e:
-        app.logger.error(f"Search error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download')
 def download_file():
     url = request.args.get('url')
     fmt = request.args.get('format','mp4')
+    if not url: return jsonify({'error': "Parameter 'url' diperlukan"}), 400
     
-    if not url: 
-        return jsonify({'error': "Parameter 'url' diperlukan"}), 400
-    
-    # Validate YouTube URL
+    # Cek apakah URL valid (YouTube)
     if 'youtube.com' not in url and 'youtu.be' not in url:
         return jsonify({'error': "URL tidak valid (harus dari YouTube)"}), 400
     
     try:
         app.logger.info(f"Downloading: {url} as {fmt}")
-        
         ydl_opts = {
             'format': 'bestaudio/best' if fmt == 'mp3' else 'best',
             'outtmpl': f'{DOWNLOAD_FOLDER}/%(title)s.%(ext)s',
             'quiet': True,
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3'
-            }] if fmt == 'mp3' else []
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}] if fmt == 'mp3' else []
         }
-        
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             if fmt == 'mp3':
                 filename = filename.rsplit('.', 1)[0] + '.mp3'
-                
         return send_file(filename, as_attachment=True)
-        
     except Exception as e:
-        app.logger.error(f"Download error: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
