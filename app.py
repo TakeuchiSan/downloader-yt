@@ -296,7 +296,7 @@ def random_suggestions():
                  'author': v.get('uploader','Unknown')} for v in entries if v
             ]
         random.shuffle(results)
-        return jsonify(results[:12])
+        return jsonify(results[:50])
     except Exception as e:
         app.logger.error(f"Error random: {e}")
         return jsonify({'error': str(e)}), 500
